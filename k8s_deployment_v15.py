@@ -345,26 +345,48 @@ class K8sActionExecutor:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class DeploymentConfig:
-    """Configuration for production deployment."""
-    
-    def __init__(self, 
-                 use_real_k8s: bool = False,
-                 namespace: str = "default",
-                 prometheus_url: str = "http://prometheus:9090",
-                 action_cooldown_sec: int = 30,
-                 max_episode_steps: int = 300):
+    """Configuration aligned with simulator runtime defaults."""
+
+    def __init__(
+        self,
+        use_real_k8s: bool = False,
+        namespace: str = "mini-ecommerce",
+        prometheus_url: str = "http://10.0.21.10:9090",
+        action_cooldown_sec: int = 15,
+        max_episode_steps: int = 300,
+        metrics_namespace: Optional[str] = None,
+        action_namespace: Optional[str] = None,
+        pod_regex: str = r"^(api-gateway|frontend|inventory-service|order-service|payment-service|product-service|user-service|redis)(-.+)?$",
+        deployment_regex: str = r"^(api-gateway|frontend|inventory-service|order-service|payment-service|product-service|user-service)$",
+        preferred_workload: str = "product-service",
+        dry_run: bool = True,
+        min_replicas: int = 1,
+        max_replicas: int = 10,
+    ):
         self.use_real_k8s = use_real_k8s
         self.namespace = namespace
+        self.metrics_namespace = metrics_namespace or namespace
+        self.action_namespace = action_namespace or namespace
         self.prometheus_url = prometheus_url
         self.action_cooldown_sec = action_cooldown_sec
         self.max_episode_steps = max_episode_steps
+        self.pod_regex = pod_regex
+        self.deployment_regex = deployment_regex
+        self.preferred_workload = preferred_workload
+        self.dry_run = dry_run
+        self.min_replicas = min_replicas
+        self.max_replicas = max_replicas
 
     def __repr__(self):
         return f"""DeploymentConfig:
   - use_real_k8s: {self.use_real_k8s}
-  - namespace: {self.namespace}
+  - metrics_namespace: {self.metrics_namespace}
+  - action_namespace: {self.action_namespace}
   - prometheus: {self.prometheus_url}
+  - preferred_workload: {self.preferred_workload}
   - action_cooldown: {self.action_cooldown_sec}s
+  - dry_run: {self.dry_run}
+  - replicas_range: [{self.min_replicas}, {self.max_replicas}]
   - max_steps: {self.max_episode_steps}"""
 
 
@@ -378,11 +400,11 @@ class K8sProductionEnv:
     def __init__(self, config: DeploymentConfig = None):
         self.config = config or DeploymentConfig()
         self.metrics_collector = K8sMetricsCollector(
-            namespace=self.config.namespace,
+            namespace=self.config.metrics_namespace,
             prometheus_url=self.config.prometheus_url,
         )
         self.action_executor = K8sActionExecutor(
-            namespace=self.config.namespace,
+            namespace=self.config.action_namespace,
             action_cooldown=self.config.action_cooldown_sec,
         )
         
@@ -404,7 +426,8 @@ class K8sProductionEnv:
         self.episode_rewards = []
         
         print(f"\n[{datetime.now().isoformat()}] Episode reset")
-        print(f"  Namespace: {self.config.namespace}")
+        print(f"  Metrics namespace: {self.config.metrics_namespace}")
+        print(f"  Action namespace: {self.config.action_namespace}")
         print(f"  Action cooldown: {self.config.action_cooldown_sec}s")
         
         self.current_state = self.metrics_collector.collect_system_state()
